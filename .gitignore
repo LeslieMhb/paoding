@@ -80,3 +80,4 @@ dist/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
+.venv/
