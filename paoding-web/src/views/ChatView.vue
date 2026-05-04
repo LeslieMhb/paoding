@@ -26,27 +26,45 @@
 
     <main class="chat-main">
       <div class="message-list" ref="messageListRef">
-        <div
-          v-for="msg in activeSession?.messages"
-          :key="msg.id"
-          class="message-item"
-          :class="msg.role"
-        >
-          <div class="message-bubble">
-            <div v-if="msg.thinking" class="thinking-block">
-              <details>
-                <summary>思考过程</summary>
-                <div class="thinking-content">{{ msg.thinking }}</div>
-              </details>
+        <div v-if="isEmpty" class="empty-state">
+          <div class="empty-icon">✈️</div>
+          <h3>你好，我是庖丁</h3>
+          <p>你的 AI 旅行助手，可以帮你查询酒店、交通、景点等信息</p>
+          <div class="quick-actions">
+            <el-button round @click="handleQuickAction('杭州有哪些好酒店？')">🏨 查酒店</el-button>
+            <el-button round @click="handleQuickAction('北京到上海的机票')">🚄 查交通</el-button>
+            <el-button round @click="handleQuickAction('杭州三日游攻略')">🗺️ 查景点</el-button>
+          </div>
+        </div>
+        <template v-else>
+          <div
+            v-for="msg in activeSession?.messages"
+            :key="msg.id"
+            class="message-item"
+            :class="msg.role"
+          >
+            <div class="message-avatar">{{ msg.role === 'user' ? '🧑' : '🤖' }}</div>
+            <div class="message-bubble">
+              <div v-if="msg.thinking" class="thinking-block">
+                <details>
+                  <summary>思考过程</summary>
+                  <div class="thinking-content">{{ msg.thinking }}</div>
+                </details>
+              </div>
+              <div class="message-content" v-html="renderMarkdown(msg.content)"></div>
             </div>
-            <div class="message-content" v-html="renderMarkdown(msg.content)"></div>
           </div>
-        </div>
-        <div v-if="streaming" class="message-item assistant">
-          <div class="message-bubble">
-            <div class="message-content streaming-cursor" v-html="renderMarkdown(streamingContent)"></div>
+          <div v-if="streaming" class="message-item assistant">
+            <div class="message-avatar">🤖</div>
+            <div class="message-bubble">
+              <div v-if="thinkingText && !streamingContent" class="thinking-indicator">
+                <span class="thinking-dot"></span>
+                {{ thinkingText }}
+              </div>
+              <div v-if="streamingContent" class="message-content streaming-cursor" v-html="renderMarkdown(streamingContent)"></div>
+            </div>
           </div>
-        </div>
+        </template>
       </div>
 
       <div class="input-area">
@@ -80,7 +98,7 @@ import { streamChat } from '../api/chat'
 import { Delete } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 
-const md = new MarkdownIt()
+const md = new MarkdownIt({ breaks: true })
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -89,9 +107,13 @@ const chatStore = useChatStore()
 const inputMessage = ref('')
 const streaming = ref(false)
 const streamingContent = ref('')
+const thinkingText = ref('')
 const messageListRef = ref<HTMLElement>()
 
 const activeSession = computed(() => chatStore.getActiveSession())
+const isEmpty = computed(
+  () => !activeSession.value || activeSession.value.messages.length === 0,
+)
 
 function renderMarkdown(content: string): string {
   return md.render(content)
@@ -114,6 +136,11 @@ function handleNewSession() {
   chatStore.createSession()
 }
 
+function handleQuickAction(text: string) {
+  inputMessage.value = text
+  handleSend()
+}
+
 async function handleSend() {
   const message = inputMessage.value.trim()
   if (!message || streaming.value) return
@@ -125,6 +152,7 @@ async function handleSend() {
   inputMessage.value = ''
   streaming.value = true
   streamingContent.value = ''
+  thinkingText.value = ''
 
   let fullContent = ''
   let thinkingContent = ''
@@ -135,23 +163,28 @@ async function handleSend() {
       session_id: sessionId,
       user_id: authStore.username,
     })) {
-      if (event.event_type === 'thinking') {
-        thinkingContent += event.data
-      } else if (event.event_type === 'message') {
-        fullContent += event.data
+      const { event_type, data } = event
+
+      if (event_type === 'thinking') {
+        thinkingContent += (data as Record<string, string>).chunk || ''
+        thinkingText.value = thinkingContent
+      } else if (event_type === 'message') {
+        fullContent += (data as Record<string, string>).chunk || ''
         streamingContent.value = fullContent
-      } else if (event.event_type === 'end_message') {
-        break
+      } else if (event_type === 'error') {
+        fullContent += `\n\n❌ ${(data as Record<string, string>).error || '出错了'}`
+        streamingContent.value = fullContent
       }
       scrollToBottom()
     }
-  } catch (e) {
+  } catch {
     fullContent += '\n\n[连接中断，请重试]'
   }
 
   chatStore.addMessage(sessionId, 'assistant', fullContent, thinkingContent || undefined)
   streaming.value = false
   streamingContent.value = ''
+  thinkingText.value = ''
   scrollToBottom()
 }
 
@@ -242,13 +275,54 @@ function handleLogout() {
   padding: 20px;
 }
 
-.message-item {
-  margin-bottom: 16px;
+.empty-state {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #909399;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-state h3 {
+  font-size: 20px;
+  color: #303133;
+  margin-bottom: 8px;
+}
+
+.empty-state p {
+  margin-bottom: 24px;
+}
+
+.quick-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.message-item {
+  margin-bottom: 20px;
+  display: flex;
+  gap: 12px;
 }
 
 .message-item.user {
   justify-content: flex-end;
+}
+
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
 }
 
 .message-bubble {
@@ -283,6 +357,34 @@ function handleLogout() {
 .thinking-content {
   white-space: pre-wrap;
   margin-top: 4px;
+}
+
+.thinking-indicator {
+  color: #909399;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.thinking-dot {
+  width: 6px;
+  height: 6px;
+  background: #409eff;
+  border-radius: 50%;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
 }
 
 .streaming-cursor::after {

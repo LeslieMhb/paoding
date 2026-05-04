@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -23,9 +23,19 @@ export interface ChatRequest {
   user_id: string
 }
 
+export type SSEEventType =
+  | 'start_thinking'
+  | 'thinking'
+  | 'end_thinking'
+  | 'start_message'
+  | 'message'
+  | 'end_message'
+  | 'error'
+  | 'conversation_ending'
+
 export interface SSEEvent {
-  event_type: string
-  data: string
+  event_type: SSEEventType
+  data: Record<string, unknown>
 }
 
 /**
@@ -33,7 +43,7 @@ export interface SSEEvent {
  * Returns an async generator yielding SSE events.
  */
 export async function* streamChat(request: ChatRequest): AsyncGenerator<SSEEvent> {
-  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
   const response = await fetch(`${baseURL}/api/chat/sendMessage`, {
     method: 'POST',
     headers: {
@@ -70,7 +80,12 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<SSEEvent
       } else if (line.startsWith('data: ')) {
         currentData = line.slice(6)
       } else if (line === '' && currentEvent && currentData) {
-        yield { event_type: currentEvent, data: currentData }
+        try {
+          const parsedData = JSON.parse(currentData)
+          yield { event_type: currentEvent as SSEEventType, data: parsedData }
+        } catch {
+          yield { event_type: currentEvent as SSEEventType, data: { raw: currentData } }
+        }
         currentEvent = ''
         currentData = ''
       }
