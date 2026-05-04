@@ -1,0 +1,36 @@
+services:
+  paoding-java:
+    build:
+      context: ./paoding-java
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/v1/hotel/search"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  paoding-python:
+    build:
+      context: ./paoding-python
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - JAVA_SERVICE_URL=http://paoding-java:8080
+    depends_on:
+      paoding-java:
+        condition: service_healthy
+
+  paoding-web:
+    build:
+      context: ./paoding-web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - paoding-python
