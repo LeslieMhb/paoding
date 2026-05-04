@@ -63,6 +63,8 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<SSEEvent
 
   const decoder = new TextDecoder()
   let buffer = ''
+  let currentEvent = ''
+  let currentData = ''
 
   while (true) {
     const { done, value } = await reader.read()
@@ -72,15 +74,13 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<SSEEvent
     const lines = buffer.split('\n')
     buffer = lines.pop() || ''
 
-    let currentEvent = ''
-    let currentData = ''
-
     for (const line of lines) {
-      if (line.startsWith('event: ')) {
-        currentEvent = line.slice(7).trim()
-      } else if (line.startsWith('data: ')) {
-        currentData = line.slice(6)
-      } else if (line === '' && currentEvent && currentData) {
+      const trimmed = line.trimEnd()  // handle \r\n line endings
+      if (trimmed.startsWith('event: ')) {
+        currentEvent = trimmed.slice(7).trim()
+      } else if (trimmed.startsWith('data: ')) {
+        currentData = trimmed.slice(6)
+      } else if (trimmed === '' && currentEvent && currentData) {
         try {
           const parsedData = JSON.parse(currentData)
           yield { event_type: currentEvent as SSEEventType, data: parsedData }

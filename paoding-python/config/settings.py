@@ -2,10 +2,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # LLM
-    openai_api_key: str = "sk-xxx"
-    openai_base_url: str = "https://api.openai.com/v1"
-    openai_model: str = "gpt-4o-mini"
+    # LLM (Alibaba Cloud DashScope - DeepSeek)
+    openai_api_key: str = "sk-7943a03e14bf4b379116412e66fd4142"
+    openai_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    openai_model: str = "deepseek-v4-pro"
 
     # Java Service
     java_service_url: str = "http://localhost:8080"

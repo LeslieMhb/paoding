@@ -19,8 +19,8 @@ services:
       - "8000:8000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      - OPENAI_MODEL=${OPENAI_MODEL:-deepseek-v4-pro}
       - JAVA_SERVICE_URL=http://paoding-java:8080
     depends_on:
       paoding-java:
