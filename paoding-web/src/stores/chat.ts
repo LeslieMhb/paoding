@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 export interface ChatMessage {
   id: string
@@ -16,9 +16,25 @@ export interface ChatSession {
   createdAt: number
 }
 
+const STORAGE_KEY = 'paoding_sessions'
+const ACTIVE_KEY = 'paoding_active_session'
+
+function loadSessions(): ChatSession[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function saveSessions(sessions: ChatSession[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions))
+}
+
 export const useChatStore = defineStore('chat', () => {
-  const sessions = ref<ChatSession[]>([])
-  const activeSessionId = ref<string>('')
+  const sessions = ref<ChatSession[]>(loadSessions())
+  const activeSessionId = ref<string>(localStorage.getItem(ACTIVE_KEY) || '')
 
   function createSession(): string {
     const session: ChatSession = {
@@ -68,10 +84,23 @@ export const useChatStore = defineStore('chat', () => {
     return sessions.value.find((s) => s.id === activeSessionId.value)
   }
 
-  // Initialize with a session
+  /** Get history pairs for multi-turn context */
+  function getHistory(sessionId: string): { role: string; content: string }[] {
+    const session = sessions.value.find((s) => s.id === sessionId)
+    if (!session) return []
+    return session.messages.map((m) => ({ role: m.role, content: m.content }))
+  }
+
+  // Initialize with a session if empty
   if (sessions.value.length === 0) {
     createSession()
+  } else if (!activeSessionId.value || !sessions.value.find((s) => s.id === activeSessionId.value)) {
+    activeSessionId.value = sessions.value[0].id
   }
+
+  // Persist on changes
+  watch(sessions, (val) => saveSessions(val), { deep: true })
+  watch(activeSessionId, (val) => localStorage.setItem(ACTIVE_KEY, val))
 
   return {
     sessions,
@@ -81,5 +110,6 @@ export const useChatStore = defineStore('chat', () => {
     updateLastAssistantMessage,
     deleteSession,
     getActiveSession,
+    getHistory,
   }
 })

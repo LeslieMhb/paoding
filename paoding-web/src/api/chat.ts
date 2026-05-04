@@ -21,6 +21,7 @@ export interface ChatRequest {
   message: string
   session_id: string
   user_id: string
+  history?: { role: string; content: string }[]
 }
 
 export type SSEEventType =

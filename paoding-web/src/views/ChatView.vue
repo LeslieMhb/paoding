@@ -158,10 +158,12 @@ async function handleSend() {
   let thinkingContent = ''
 
   try {
+    const history = chatStore.getHistory(sessionId)
     for await (const event of streamChat({
       message,
       session_id: sessionId,
       user_id: authStore.username,
+      history,
     })) {
       const { event_type, data } = event
 

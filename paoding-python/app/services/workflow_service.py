@@ -21,7 +21,7 @@ def _get_graph():
     return _graph
 
 
-async def run_agent_workflow(message: str, session_id: str, user_id: str) -> AsyncGenerator:
+async def run_agent_workflow(message: str, session_id: str, user_id: str, history: list[tuple[str, str]] | None = None) -> AsyncGenerator:
     """
     Main workflow entry point.
     Executes LangGraph workflow and yields SSE events for streaming.
@@ -37,10 +37,21 @@ async def run_agent_workflow(message: str, session_id: str, user_id: str) -> Asy
         yield {"event": EventType.THINKING, "data": json.dumps({"chunk": char})}
         await asyncio.sleep(0.02)
 
+    # Build messages from history + current message
+    messages = []
+    if history:
+        from langchain_core.messages import AIMessage
+        for role, content in history[-10:]:  # last 10 turns
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                messages.append(AIMessage(content=content))
+    messages.append(HumanMessage(content=message))
+
     # Execute graph
     try:
         initial_state: ChatState = {
-            "messages": [HumanMessage(content=message)],
+            "messages": messages,
             "session_id": session_id,
             "user_id": user_id,
             "current_intent": "",
