@@ -30,6 +30,7 @@ async def chatbot_node(state: ChatState) -> dict:
     messages = state.get("messages", [])
     full_messages = [SystemMessage(content=CHATBOT_SYSTEM_PROMPT)] + list(messages[-5:])
 
-    response = await llm.ainvoke(full_messages)
-
-    return {"response": response.content}
+    chunks = []
+    async for chunk in llm.astream(full_messages):
+        chunks.append(chunk.content)
+    return {"response": "".join(chunks)}

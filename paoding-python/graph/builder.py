@@ -1,6 +1,7 @@
 """LangGraph workflow builder."""
 
 from langgraph.graph import StateGraph, END
+from langgraph.graph.state import CompiledStateGraph
 
 from graph.types import ChatState, IntentType
 from graph.nodes.reception import reception_node
@@ -24,7 +25,7 @@ def route_intent(state: ChatState) -> str:
     return routing.get(intent, "chatbot")
 
 
-def build_graph() -> StateGraph:
+def build_graph() -> CompiledStateGraph:
     """Build and compile the agent workflow graph."""
     graph = StateGraph(ChatState)
 
@@ -56,4 +57,6 @@ def build_graph() -> StateGraph:
     graph.add_edge("attraction_consult", END)
     graph.add_edge("chatbot", END)
 
-    return graph.compile()
+    compiled = graph.compile()
+    print(compiled.get_graph().draw_mermaid())
+    return compiled

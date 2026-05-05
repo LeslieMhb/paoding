@@ -82,9 +82,10 @@ async def hotel_consult_node(state: ChatState) -> dict:
         HumanMessage(content=context),
     ] + list(messages[-3:])  # Include recent conversation for context
 
-    response = await llm.ainvoke(full_messages)
-
-    return {"response": response.content}
+    chunks = []
+    async for chunk in llm.astream(full_messages):
+        chunks.append(chunk.content)
+    return {"response": "".join(chunks)}
 
 
 def _format_hotel_list(hotel_list: list) -> str:

@@ -89,9 +89,10 @@ async def attraction_consult_node(state: ChatState) -> dict:
         HumanMessage(content=context),
     ] + list(messages[-3:])
 
-    response = await llm.ainvoke(full_messages)
-
-    return {"response": response.content}
+    chunks = []
+    async for chunk in llm.astream(full_messages):
+        chunks.append(chunk.content)
+    return {"response": "".join(chunks)}
 
 
 def _format_attraction_list(attraction_list: list) -> str:

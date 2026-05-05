@@ -1,14 +1,15 @@
-"""Workflow service - orchestrates LangGraph execution with SSE streaming."""
+"""Workflow service - orchestrates LangGraph execution with real-time SSE streaming."""
 
 import json
-import asyncio
 from typing import AsyncGenerator
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
 
 from graph.types import EventType, ChatState
 from graph.builder import build_graph
 
+# Domain nodes that produce MESSAGE events (vs THINKING from reception)
+_DOMAIN_NODES = {"hotel_consult", "transport_consult", "attraction_consult", "chatbot"}
 
 _graph = None
 
@@ -21,74 +22,91 @@ def _get_graph():
     return _graph
 
 
-async def run_agent_workflow(message: str, session_id: str, user_id: str, history: list[tuple[str, str]] | None = None) -> AsyncGenerator:
+async def run_agent_workflow(
+    message: str, session_id: str, user_id: str, history: list[tuple[str, str]] | None = None
+) -> AsyncGenerator:
     """
     Main workflow entry point.
-    Executes LangGraph workflow and yields SSE events for streaming.
+    Executes LangGraph workflow via astream_events and yields SSE events in real time.
     """
     graph = _get_graph()
-
-    # Start thinking
-    yield {"event": EventType.START_THINKING, "data": json.dumps({"session_id": session_id})}
-
-    # Thinking phase
-    thinking_text = "正在分析您的问题..."
-    for char in thinking_text:
-        yield {"event": EventType.THINKING, "data": json.dumps({"chunk": char})}
-        await asyncio.sleep(0.02)
 
     # Build messages from history + current message
     messages = []
     if history:
-        from langchain_core.messages import AIMessage
-        for role, content in history[-10:]:  # last 10 turns
+        for role, content in history[-10:]:
             if role == "user":
                 messages.append(HumanMessage(content=content))
             elif role == "assistant":
                 messages.append(AIMessage(content=content))
     messages.append(HumanMessage(content=message))
 
-    # Execute graph
+    initial_state: ChatState = {
+        "messages": messages,
+        "session_id": session_id,
+        "user_id": user_id,
+        "current_intent": "",
+        "current_message": message,
+        "response": "",
+        "thinking": "",
+        "error": "",
+    }
+
     try:
-        initial_state: ChatState = {
-            "messages": messages,
-            "session_id": session_id,
-            "user_id": user_id,
-            "current_intent": "",
-            "current_message": message,
-            "response": "",
-            "thinking": "",
-            "error": "",
-        }
+        event_stream = graph.astream_events(initial_state, version="v2")
 
-        result = await graph.ainvoke(initial_state)
+        thinking_started = False
+        message_started = False
 
-        # Update thinking with intent info
-        thinking_result = result.get("thinking", "")
-        if thinking_result:
-            for char in thinking_result:
-                yield {"event": EventType.THINKING, "data": json.dumps({"chunk": char})}
-                await asyncio.sleep(0.01)
+        async for event in event_stream:
+            kind = event.get("event")
+            name = event.get("name", "")
+            metadata = event.get("metadata", {})
+            langgraph_node = metadata.get("langgraph_node", "")
+
+            # --- Reception node: thinking phase ---
+
+            if langgraph_node == "reception":
+                # Stream LLM tokens from reception as THINKING events
+                if kind == "on_chat_model_stream":
+                    if not thinking_started:
+                        thinking_started = True
+                        yield {"event": EventType.START_THINKING, "data": json.dumps({"session_id": session_id})}
+
+                    chunk_content = event.get("data", {}).get("chunk")
+                    if chunk_content and chunk_content.content:
+                        yield {"event": EventType.THINKING, "data": json.dumps({"chunk": chunk_content.content})}
+
+                # Reception chain ended
+                elif kind == "on_chain_end" and name == "reception":
+                    if thinking_started:
+                        yield {"event": EventType.END_THINKING, "data": json.dumps({})}
+
+            # --- Domain nodes: message phase ---
+
+            elif langgraph_node in _DOMAIN_NODES:
+                # Stream LLM tokens from domain nodes as MESSAGE events
+                if kind == "on_chat_model_stream":
+                    if not message_started:
+                        message_started = True
+                        yield {"event": EventType.START_MESSAGE, "data": json.dumps({"session_id": session_id})}
+
+                    chunk_content = event.get("data", {}).get("chunk")
+                    if chunk_content and chunk_content.content:
+                        yield {"event": EventType.MESSAGE, "data": json.dumps({"chunk": chunk_content.content})}
+
+                # Domain chain ended
+                elif kind == "on_chain_end" and name in _DOMAIN_NODES:
+                    if message_started:
+                        message_started = False
+                        yield {"event": EventType.END_MESSAGE, "data": json.dumps({"session_id": session_id})}
 
     except Exception as e:
-        yield {"event": EventType.END_THINKING, "data": json.dumps({})}
+        # Ensure we close any open phases on error
+        if thinking_started:
+            yield {"event": EventType.END_THINKING, "data": json.dumps({})}
+        if message_started:
+            yield {"event": EventType.END_MESSAGE, "data": json.dumps({"session_id": session_id})}
         yield {"event": EventType.ERROR, "data": json.dumps({"error": str(e)})}
-        yield {"event": EventType.CONVERSATION_ENDING, "data": json.dumps({})}
-        return
 
-    yield {"event": EventType.END_THINKING, "data": json.dumps({})}
-
-    # Start message
-    yield {"event": EventType.START_MESSAGE, "data": json.dumps({"session_id": session_id})}
-
-    # Stream response character by character
-    response = result.get("response", "抱歉，我暂时无法回答您的问题，请稍后再试。")
-    for char in response:
-        yield {"event": EventType.MESSAGE, "data": json.dumps({"chunk": char})}
-        await asyncio.sleep(0.02)
-
-    # End message
-    yield {"event": EventType.END_MESSAGE, "data": json.dumps({"session_id": session_id})}
-
-    # Conversation ending
     yield {"event": EventType.CONVERSATION_ENDING, "data": json.dumps({})}

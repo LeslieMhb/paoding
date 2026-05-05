@@ -37,12 +37,15 @@ async def reception_node(state: ChatState) -> dict:
     user_text = last_message.content if last_message else ""
 
     try:
-        response = await llm.ainvoke([
+        chunks = []
+        async for chunk in llm.astream([
             SystemMessage(content=INTENT_CLASSIFICATION_PROMPT),
             HumanMessage(content=user_text),
-        ])
+        ]):
+            chunks.append(chunk.content)
+        full_response = "".join(chunks)
 
-        result = json.loads(response.content.strip())
+        result = json.loads(full_response.strip())
         intent = result.get("intent", IntentType.GENERAL_CHAT)
 
         # Validate intent
