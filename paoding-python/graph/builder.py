@@ -1,7 +1,10 @@
 """LangGraph workflow builder."""
 
+from typing import Optional
+
 from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from graph.types import ChatState, IntentType
 from graph.nodes.reception import reception_node
@@ -25,8 +28,12 @@ def route_intent(state: ChatState) -> str:
     return routing.get(intent, "chatbot")
 
 
-def build_graph() -> CompiledStateGraph:
-    """Build and compile the agent workflow graph."""
+def build_graph(checkpointer: Optional[BaseCheckpointSaver] = None) -> CompiledStateGraph:
+    """Build and compile the agent workflow graph.
+
+    Args:
+        checkpointer: Optional checkpoint saver for state persistence and time travel.
+    """
     graph = StateGraph(ChatState)
 
     # Add nodes
@@ -57,6 +64,6 @@ def build_graph() -> CompiledStateGraph:
     graph.add_edge("attraction_consult", END)
     graph.add_edge("chatbot", END)
 
-    compiled = graph.compile()
+    compiled = graph.compile(checkpointer=checkpointer)
     print(compiled.get_graph().draw_mermaid())
     return compiled
