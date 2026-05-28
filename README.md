@@ -1,6 +1,6 @@
 # 庖丁 (Paoding)
 
-复现 libai-master 的 MVP 版本 —— AI 旅行助手平台。
+AI 旅行助手平台MVP 版本。
 
 ## 架构
 
